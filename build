@@ -1,0 +1,4 @@
+nasm -felf64 main.asm
+ld main.o -o mainelf
+./mainelf
+rm ./mainelf ./main.o
