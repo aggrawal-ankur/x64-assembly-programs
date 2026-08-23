@@ -39,7 +39,7 @@ section .data
   unsp_op_msg  db  "Operator not supported.", 0xA
   unsp_op_len  equ  $ - unsp_op_msg
 
-  cont_msg  db  "Would you like to continue?", 0xA, "Enter 1 for yes, 0 for NO:"
+  cont_msg  db  0xA, 0xA, "Would you like to continue?", 0xA, "ENTER 1 for yes, 0 for NO:"
   cont_len  equ  $ - cont_msg
 
 
@@ -58,60 +58,106 @@ ascii_to_num:
   push rbp
   mov  rbp, rsp
 
-  xor rcx, rcx    ; Counter
-  xor rsi, rsi    ; Number of digits in the stream.
   xor r8,  r8     ; The number, after conversion.
-
-; calculate the number of digits in the ASCII stream.
-.loop1:
-  cmp BYTE [rax + rsi], 0xA
-  jz  .loop2
-
-  inc rsi
-  jmp .loop1
+  xor rdx, rdx    ; Register to load the incoming character.
+  xor rcx, rcx    ; Counter.
 
 ; Convert the ASCII stream into a numeric stream.
 .loop2:
-  ; Extract the first ASCII character. This value 
-  ;   is an ordinal, only its human interpretation 
-  ;   is that of a number.
+  ; Extract each ASCII character. This value is an 
+  ;   ordinal, only its human interpretation is a 
+  ;   number.
   mov dl, BYTE [rax+rcx]
 
+  ; Check if we have reached one past the end of 
+  ; the available digits (the new line character).
+  cmp dl, 0xA
+  jnz .cont
+
+  ; If yes, return.
+  mov rax, r8
+  pop rbp
+  ret
+
+.cont:
   ; The ordinals corresponding to 0-9 ASCII chars 
   ;   are 48-57 in decimals. To obtain the actual 
   ;   decimal ordinal corresponding to them, we've 
   ;   subtract 48 from the ASCII value.
   sub dl, 48
 
-  ; We are moving from right to left. The rightmost 
-  ;   value carries the most weight. To construct the 
-  ;   result correctly, we have to multiply the existing 
-  ;   number in the result with 10, followed by adding 
-  ;   the newly converted ASCII character.
+  ; We are moving left to right. The leftmost value 
+  ;   carries the largest weight. To construct the 
+  ;   result correctly, we have to multiply the 
+  ;   existing number in the result with 10, followed 
+  ;   by adding the newly converted ASCII character.
   ; For example, take "56" as input.
   ; - The result is initialized to 0.
   ; - First  iteration, we get (0*10 + 5), i.e. 5.
   ; - Second iteration, we get (5*10 + 6), i.e. 56.
-  imul  r8, 10
   movzx rdx, dl
-  add   r8, rdx
+  imul  r8,  10
+  add   r8,  rdx
 
   ; Increase the counter.
   inc rcx
+  jmp .loop2
 
-  ; Check if we have reached the last digit.
-  cmp cl, sil
-  jnz .loop2
 
-  ; Return
-  mov rax, r8
+; Convert a number into its ASCII representation 
+; and returns the number of digits in the number.
+; Arg1 (rax): number
+num_to_ascii:
+  push rbp
+  mov  rbp, rsp
+
+  mov rsi, rax    ; copy the original number
+  mov r10, 1      ; result length (initialize with 1)
+
+; Calculate the number of digits in the result.
+.loop3:
+  cqo            ; sign-extend RDX
+  mov rdi, 10
+  div rdi        ; num = num/10
+
+  cmp rax, 0
+  jnz .not_yet
+
+  mov rax, rsi    ; restore the original number in rax.
+  mov r11, r10    ; copy the number of digits.
+  jmp .loop4
+
+.not_yet:
+  inc r10
+  jmp .loop3
+
+; Divide the result by 10 until the quotient 
+; becomes 0, i.e. no more digits left. Put the 
+; remainder from opposite side in the buffer.
+.loop4:
+  cqo
+  mov rdi, 10
+  div rdi
+
+  lea rsi, result
+  add dl, 48
+  mov BYTE [rsi+r10-1], dl
+  dec r10
+
+  cmp rax, 0
+  jnz .loop4
+
+  mov rax, r11
   pop rbp
   ret
 
 
 global _start
 _start:
-  sub rsp, 16
+  push r12
+  push r13
+  push r14
+
   mov rax, 1
   mov rdi, 1
   mov rsi, hello_msg
@@ -125,16 +171,16 @@ print_menu:
   mov rdx, aster_len
   syscall
 
-  mov rax, 1           ; sys_write
-  mov rdi, 1           ; fd=stdout
+  mov rax, 1             ; sys_write
+  mov rdi, 1             ; fd=stdout
   mov rsi, select_msg    ; buffer
   mov rdx, select_len    ; buffer length
   syscall
 
-  mov rax, 1          ; sys_write
-  mov rdi, 1          ; fd=stdout
-  mov rsi, add_op_msg    ; buffer
-  mov rdx, add_op_len     ; buffer length
+  mov rax, 1
+  mov rdi, 1
+  mov rsi, add_op_msg
+  mov rdx, add_op_len
   syscall
 
   mov rax, 1
@@ -211,20 +257,20 @@ print_menu:
 
   ; Call ascii_to_num and convert the ASCII streams 
   ; into actual integers.
-  xor r8, r8      ; num1
-  xor r9, r9      ; num2
-  xor r10, r10    ; result
+  xor r12, r12      ; num1
+  xor r13, r13      ; num2
+  xor r14, r14    ; result
 
   lea rax, num1
   call ascii_to_num
-  mov r8, rax
+  mov r12, rax
 
   lea rax, num2
   call ascii_to_num
-  mov r9, rax
+  mov r13, rax
 
   ; Perform the operation.
-  mov r10, r8      ; load num1 in result
+  mov r14, r12     ; load num1 in result
   lea rax, oper    ; load the operator in rax
 
   cmp BYTE [rax], 49  ; 1 (+)
@@ -242,22 +288,23 @@ print_menu:
   jnz unsp_op
 
 _add:
-  add r8, r9
-  jmp num_to_ascii
+  add r14, r13
+  jmp print_result
 
 _sub:
-  sub r8, r9
-  jmp num_to_ascii
+  sub r14, r13
+  jmp print_result
 
 _mul:
-  imul r8, r9
-  jmp num_to_ascii
+  imul r14, r13
+  jmp print_result
 
 _div:
-  mov rax, r8
-  cqo            ; sign extend RDX (RAX:RDX)
-  div r9         ; (Quotient:RAX && Remainder:RDX)
-  jmp num_to_ascii
+  mov rax, r12
+  cqo             ; sign extend RDX (RAX:RDX)
+  div r13         ; (Quotient:RAX && Remainder:RDX)
+  mov r14, rax    ; copy the quotient in the result register
+  jmp print_result
 
 unsp_op:
   mov rax, 1
@@ -267,40 +314,6 @@ unsp_op:
   syscall
 
   jmp ask_again
-
-num_to_ascii:
-  mov rax, r10    ; result
-  mov r11, 1      ; result length
-  xor rcx, rcx    ; result length copy for loop4.
-
-; Calculate the number of digits in the result.
-.loop3:
-  mov rcx, r11    ; [change this]
-
-  mov  rdi, r11
-  imul rdi, 10
-  div  rdi
-
-  cmp rax, 0
-  jz  .loop4
-
-  inc r11
-  jmp .loop3
-
-; Divide the result by 10 until the quotient 
-; becomes 0, i.e. no more digits left. Put 
-; the remainder from opposite side.
-.loop4:
-  cqo
-  mov rdi, 10
-  div rdi
-
-  lea rsi, result
-  mov BYTE [rsi+rcx-1], dl
-  dec rcx
-
-  cmp rax, 0
-  jnz .loop4
 
 print_result:
   lea rax, oper
@@ -320,46 +333,44 @@ print_result:
 add_res:
   mov rax, 1
   mov rdi, 1
-  lea rsi, res_add
+  mov rsi, res_add
   mov rdx, res_len
   syscall
-
   jmp ress
 
 sub_res:
   mov rax, 1
   mov rdi, 1
-  lea rsi, res_sub
+  mov rsi, res_sub
   mov rdx, res_len
   syscall
-
   jmp ress
 
 mul_res:
   mov rax, 1
   mov rdi, 1
-  lea rsi, res_mul
+  mov rsi, res_mul
   mov rdx, res_len
   syscall
-
   jmp ress
 
 div_res:
   mov rax, 1
   mov rdi, 1
-  lea rsi, res_div
+  mov rsi, res_div
   mov rdx, res_len
   syscall
-
   jmp ress
 
 ress:
+  mov rax, r14
+  call num_to_ascii
+
+  mov rdx, rax
   mov rax, 1
   mov rdi, 1
-  mov rsi, result
-  mov rdx, r11
-
-  jmp ask_again
+  lea rsi, result
+  syscall
 
 ask_again:
   mov rax, 1
@@ -369,7 +380,7 @@ ask_again:
   syscall
 
   mov rax, 0
-  mov rax, 0
+  mov rdi, 0
   mov rsi, oper
   mov rdx, 2
   syscall
