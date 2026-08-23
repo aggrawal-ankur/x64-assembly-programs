@@ -1,24 +1,24 @@
 section .data
-  init_msg  db  "Hello, Calculator!", 0xA
-  init_len  equ  $ - init_msg
+  hello_msg  db  "Hello, Calculator!", 0xA
+  hello_len  equ  $ - hello_msg
 
   asterisks  db  "*-------------------------*", 0xA
   aster_len  equ  $ - asterisks
 
-  menu_msg  db  "Select the operation:", 0xA
-  menu_len  equ  $ - menu_msg
+  select_msg  db  "Select the operation:", 0xA
+  select_len  equ  $ - select_msg
 
-  add_msg   db  "1. Add", 0xA
-  add_len   equ  $ - add_msg
+  add_op_msg  db  "1. Add", 0xA
+  add_op_len  equ  $ - add_op_msg
 
-  sub_msg   db  "2. Subtract", 0xA
-  sub_len   equ  $ - sub_msg
+  sub_op_msg  db  "2. Subtract", 0xA
+  sub_op_len  equ  $ - sub_op_msg
 
-  mul_msg   db  "3. Multiply", 0xA
-  mul_len   equ  $ - mul_msg
+  mul_op_msg  db  "3. Multiply", 0xA
+  mul_op_len  equ  $ - mul_op_msg
 
-  div_msg   db  "4. Divide", 0xA
-  div_len   equ  $ - div_msg
+  div_op_msg  db  "4. Divide", 0xA
+  div_op_len  equ  $ - div_op_msg
 
   exit_msg  db  "0. Exit", 0xA
   exit_len  equ  $ - exit_msg
@@ -26,15 +26,15 @@ section .data
   choice  db  "Your choice: "
   ch_len  equ  $ - choice
 
-  in_num1   db  "Enter num1: ", 0xA
-  in_num2   db  "Enter num2: ", 0xA
-  inp_len   equ  $ - in_num2
+  in_num1  db  "Enter num1: "
+  in_num2  db  "Enter num2: "
+  inp_len  equ  $ - in_num2
 
   res_add  db  "num1 + num2 = "
   res_sub  db  "num1 - num2 = "
   res_mul  db  "num1 * num2 = "
   res_div  db  "num1 / num2 = "
-  res_len   equ  $ - div_msg
+  res_len  equ  $ - res_div
 
   unsp_op_msg  db  "Operator not supported.", 0xA
   unsp_op_len  equ  $ - unsp_op_msg
@@ -50,7 +50,6 @@ section .bss
   result:  resb  4    ; A 4 bytes container for result. The extra byte is for '\n'.
 
 section .text
-global  _start
 
 ; A procedure to convert an ASCII stream of 
 ;   numbers to an integer stream.
@@ -93,8 +92,9 @@ ascii_to_num:
   ; - The result is initialized to 0.
   ; - First  iteration, we get (0*10 + 5), i.e. 5.
   ; - Second iteration, we get (5*10 + 6), i.e. 56.
-  imul r8, 10
-  add  r8, dl
+  imul  r8, 10
+  movzx rdx, dl
+  add   r8, rdx
 
   ; Increase the counter.
   inc rcx
@@ -109,12 +109,13 @@ ascii_to_num:
   ret
 
 
+global _start
 _start:
   sub rsp, 16
   mov rax, 1
   mov rdi, 1
-  mov rsi, init_msg
-  mov rdx, init_len
+  mov rsi, hello_msg
+  mov rdx, hello_len
   syscall
 
 print_menu:
@@ -126,32 +127,38 @@ print_menu:
 
   mov rax, 1           ; sys_write
   mov rdi, 1           ; fd=stdout
-  mov rsi, menu_msg    ; buffer
-  mov rdx, menu_len    ; buffer length
+  mov rsi, select_msg    ; buffer
+  mov rdx, select_len    ; buffer length
   syscall
 
   mov rax, 1          ; sys_write
   mov rdi, 1          ; fd=stdout
-  mov rsi, add_msg    ; buffer
-  mov rdx, add_len     ; buffer length
+  mov rsi, add_op_msg    ; buffer
+  mov rdx, add_op_len     ; buffer length
   syscall
 
   mov rax, 1
   mov rdi, 1
-  mov rsi, sub_msg
-  mov rdx, sub_len
+  mov rsi, sub_op_msg
+  mov rdx, sub_op_len
   syscall
 
   mov rax, 1
   mov rdi, 1
-  mov rsi, mul_msg
-  mov rdx, mul_msg
+  mov rsi, mul_op_msg
+  mov rdx, mul_op_len
   syscall
 
   mov rax, 1
   mov rdi, 1
-  mov rsi, div_msg
-  mov rdx, div_msg
+  mov rsi, div_op_msg
+  mov rdx, div_op_len
+  syscall
+
+  mov rax, 1
+  mov rdi, 1
+  mov rsi, exit_msg
+  mov rdx, exit_len
   syscall
 
   mov rax, 1
@@ -173,6 +180,8 @@ print_menu:
   mov rdx, 2       ; buffer capacity
   syscall
 
+  lea rax, oper
+  cmp BYTE [rax], 48    ; ASCII for 0
   jz exit
 
   ; Take the numbers.
@@ -215,20 +224,19 @@ print_menu:
   mov r9, rax
 
   ; Perform the operation.
-  mov r10, r8    ; load num1 in result
+  mov r10, r8      ; load num1 in result
+  lea rax, oper    ; load the operator in rax
 
-  lea rax, oper
-
-  cmp BYTE [rax], 43  ; +
+  cmp BYTE [rax], 49  ; 1 (+)
   jz  _add
 
-  cmp BYTE [rax], 45  ; -
+  cmp BYTE [rax], 50  ; 2 (-)
   jz  _sub
 
-  cmp BYTE [rax], 42  ; *
+  cmp BYTE [rax], 51  ; 3 (*)
   jz  _mul
 
-  cmp BYTE [rax], 47  ; /
+  cmp BYTE [rax], 52  ; 4 (/)
   jz  _div
 
   jnz unsp_op
@@ -284,10 +292,11 @@ num_to_ascii:
 ; the remainder from opposite side.
 .loop4:
   cqo
-  div 10
+  mov rdi, 10
+  div rdi
 
   lea rsi, result
-  mov BYTE [rsi+rcx-1], rdx
+  mov BYTE [rsi+rcx-1], dl
   dec rcx
 
   cmp rax, 0
@@ -296,16 +305,16 @@ num_to_ascii:
 print_result:
   lea rax, oper
 
-  cmp BYTE [rax], 43
+  cmp BYTE [rax], 49
   jz  add_res
 
-  cmp BYTE [rax], 45
+  cmp BYTE [rax], 50
   jz  sub_res
 
-  cmp BYTE [rax], 42
+  cmp BYTE [rax], 51
   jz  mul_res
 
-  cmp BYTE [rax], 47
+  cmp BYTE [rax], 52
   jz  div_res
 
 add_res:
@@ -366,8 +375,7 @@ ask_again:
   syscall
 
   lea rax, oper
-  mov rax, [rax]
-  cmp rax, 49
+  cmp BYTE [rax], 49
   jz  print_menu
 
 exit:
