@@ -44,10 +44,10 @@ section .data
 
 
 section .bss
-  oper:    resb  2    ; A 1 byte container for the operator. The extra byte is for '\n'.
-  num1:    resb  5    ; A 4 bytes container. The extra byte is for '\n'.
-  num2:    resb  5    ; A 4 bytes container. The extra byte is for '\n'.
-  result:  resb  4    ; A 4 bytes container for result. The extra byte is for '\n'.
+  oper:    resb   2    ; A 1 byte container for the operator. The extra byte is for '\n'.
+  num1:    resb  12    ; A (11+1) bytes container. The extra byte is for '\n'.
+  num2:    resb  12    ; A (11+1) bytes container. The extra byte is for '\n'.
+  result:  resb  24    ; A 24 bytes container for result. The extra byte is for '\n'.
 
 section .text
 
@@ -61,12 +61,12 @@ ascii_to_num:
   xor r8,  r8     ; The number, after conversion.
   xor rdx, rdx    ; Register to load the incoming character.
   xor rcx, rcx    ; Counter.
+  xor rsi, rsi    ; Will be set 1 if the number has a hyphen-minus
 
-; Convert the ASCII stream into a numeric stream.
-.loop2:
+.loop1:
   ; Extract each ASCII character. This value is an 
-  ;   ordinal, only its human interpretation is a 
-  ;   number.
+  ; ordinal, only its human interpretation is a 
+  ; number.
   mov dl, BYTE [rax+rcx]
 
   ; Check if we have reached one past the end of 
@@ -74,16 +74,31 @@ ascii_to_num:
   cmp dl, 0xA
   jnz .cont
 
-  ; If yes, return.
+  ; If yes, prepare for return.
+  ; set the sign bit if a hyphen-minus was found.
+  cmp rsi, 1
+  jnz .return
+
+  neg r8
+
+.return:
   mov rax, r8
   pop rbp
   ret
 
 .cont:
+  cmp dl, 45    ; A (-) in the number.
+  jnz .parse_digit
+
+  mov rsi, 1
+  inc rcx
+  jmp .loop1
+
+.parse_digit:
   ; The ordinals corresponding to 0-9 ASCII chars 
-  ;   are 48-57 in decimals. To obtain the actual 
-  ;   decimal ordinal corresponding to them, we've 
-  ;   subtract 48 from the ASCII value.
+  ; are 48-57 in decimals. To obtain the actual 
+  ; decimal ordinal corresponding to them, we've 
+  ; subtract 48 from the ASCII value.
   sub dl, 48
 
   ; We are moving left to right. The leftmost value 
@@ -91,17 +106,17 @@ ascii_to_num:
   ;   result correctly, we have to multiply the 
   ;   existing number in the result with 10, followed 
   ;   by adding the newly converted ASCII character.
-  ; For example, take "56" as input.
+  ; For example, take "56\n" as input.
   ; - The result is initialized to 0.
   ; - First  iteration, we get (0*10 + 5), i.e. 5.
   ; - Second iteration, we get (5*10 + 6), i.e. 56.
-  movzx rdx, dl
   imul  r8,  10
+  movzx rdx, dl
   add   r8,  rdx
 
   ; Increase the counter.
   inc rcx
-  jmp .loop2
+  jmp .loop1
 
 
 ; Convert a number into its ASCII representation 
@@ -112,32 +127,43 @@ num_to_ascii:
   mov  rbp, rsp
 
   mov rsi, rax    ; copy the original number
-  mov r10, 1      ; result length (initialize with 1)
+  mov r10, 1      ; Count of digits in number (initialize with 1).
 
-; Calculate the number of digits in the result.
-.loop3:
-  cqo            ; sign-extend RDX
-  mov rdi, 10
-  div rdi        ; num = num/10
+; Count the digits in number.
+.loop1:
+  cqo             ; sign-extend RDX
+  mov  rdi, 10
+  idiv rdi        ; num = num/10
 
   cmp rax, 0
   jnz .not_yet
 
   mov rax, rsi    ; restore the original number in rax.
   mov r11, r10    ; copy the number of digits.
-  jmp .loop4
+
+  ; Increase r10 by 1 if the sign-bit is set. This is 
+  ; required as we need to put a hyphen-minus before 
+  ; the number.
+  test rax, rax
+  jns  .loop2
+
+  inc r10
+  inc r11
+  neg rax      ; make the number unsigned for [REASON]
+  mov r8, 1    ; sign-bit status, later used in placing the hyphen.
+  jmp .loop2
 
 .not_yet:
   inc r10
-  jmp .loop3
+  jmp .loop1
 
 ; Divide the result by 10 until the quotient 
 ; becomes 0, i.e. no more digits left. Put the 
 ; remainder from opposite side in the buffer.
-.loop4:
+.loop2:
   cqo
-  mov rdi, 10
-  div rdi
+  mov  rdi, 10
+  idiv rdi
 
   lea rsi, result
   add dl, 48
@@ -145,8 +171,15 @@ num_to_ascii:
   dec r10
 
   cmp rax, 0
-  jnz .loop4
+  jnz .loop2
 
+  ; Put the hyphen-minus at start.
+  cmp r8, 1
+  jnz .return
+  mov BYTE [rsi+r10-1], 45
+
+; Return the count of digits in rax.
+.return:
   mov rax, r11
   pop rbp
   ret
@@ -240,7 +273,7 @@ print_menu:
   mov rax, 0
   mov rdi, 0
   lea rsi, num1
-  mov rdx, 5
+  mov rdx, 12
   syscall
 
   mov rax, 1
@@ -252,22 +285,22 @@ print_menu:
   mov rax, 0
   mov rdi, 0
   lea rsi, num2
-  mov rdx, 5
+  mov rdx, 12
   syscall
 
   ; Call ascii_to_num and convert the ASCII streams 
   ; into actual integers.
-  xor r12, r12      ; num1
-  xor r13, r13      ; num2
+  xor r12, r12    ; num1
+  xor r13, r13    ; num2
   xor r14, r14    ; result
 
-  lea rax, num1
+  lea  rax, num1
   call ascii_to_num
-  mov r12, rax
+  mov  r12, rax
 
-  lea rax, num2
+  lea  rax, num2
   call ascii_to_num
-  mov r13, rax
+  mov  r13, rax
 
   ; Perform the operation.
   mov r14, r12     ; load num1 in result
@@ -300,11 +333,11 @@ _mul:
   jmp print_result
 
 _div:
-  mov rax, r12
-  cqo             ; sign extend RDX (RAX:RDX)
-  div r13         ; (Quotient:RAX && Remainder:RDX)
-  mov r14, rax    ; copy the quotient in the result register
-  jmp print_result
+  mov  rax, r12
+  cqo              ; sign extend RDX (RAX:RDX)
+  idiv r13         ; (Quotient:RAX && Remainder:RDX)
+  mov  r14, rax    ; copy the quotient in the result register
+  jmp  print_result
 
 unsp_op:
   mov rax, 1
