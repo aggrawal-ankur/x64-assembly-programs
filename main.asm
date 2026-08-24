@@ -42,6 +42,8 @@ section .data
   cont_msg  db  0xA, 0xA, "Would you like to continue?", 0xA, "ENTER 1 for yes, 0 for NO:"
   cont_len  equ  $ - cont_msg
 
+  div_by_zero_msg  db  "Division by zero is not possible.", 0xA
+  div_by_zero_len  equ  $ - div_by_zero_msg
 
 section .bss
   oper:    resb   2    ; A 1 byte container for the operator. The extra byte is for '\n'.
@@ -61,7 +63,8 @@ ascii_to_num:
   xor r8,  r8     ; The number, after conversion.
   xor rdx, rdx    ; Register to load the incoming character.
   xor rcx, rcx    ; Counter.
-  xor rsi, rsi    ; Will be set 1 if the number has a hyphen-minus
+  xor rsi, rsi    ; sign-bit: will be set 1 if the number 
+                  ; has a hyphen-minus
 
 .loop1:
   ; Extract each ASCII character. This value is an 
@@ -70,15 +73,15 @@ ascii_to_num:
   mov dl, BYTE [rax+rcx]
 
   ; Check if we have reached one past the end of 
-  ; the available digits (the new line character).
+  ; the actual digits, i.e. the new line character.
   cmp dl, 0xA
   jnz .cont
 
   ; If yes, prepare for return.
-  ; set the sign bit if a hyphen-minus was found.
+  ; Make the number negative if a hyphen-minus was 
+  ; found.
   cmp rsi, 1
   jnz .return
-
   neg r8
 
 .return:
@@ -126,8 +129,13 @@ num_to_ascii:
   push rbp
   mov  rbp, rsp
 
+  ; mov rdi, rax
+  ; mov rax, 60
+  ; syscall
+
   mov rsi, rax    ; copy the original number
   mov r10, 1      ; Count of digits in number (initialize with 1).
+  xor r8, r8      ; sign-bit status (initialized with "not set")
 
 ; Count the digits in number.
 .loop1:
@@ -150,7 +158,7 @@ num_to_ascii:
   inc r10
   inc r11
   neg rax      ; make the number unsigned for [REASON]
-  mov r8, 1    ; sign-bit status, later used in placing the hyphen.
+  mov r8, 1    ; sign-bit active now, later used in placing the hyphen.
   jmp .loop2
 
 .not_yet:
@@ -333,11 +341,23 @@ _mul:
   jmp print_result
 
 _div:
+  ; Check for division by zero.
+  cmp r13, 0
+  jz  ._div_by_zero
+
   mov  rax, r12
   cqo              ; sign extend RDX (RAX:RDX)
   idiv r13         ; (Quotient:RAX && Remainder:RDX)
   mov  r14, rax    ; copy the quotient in the result register
   jmp  print_result
+
+._div_by_zero:
+  mov rax, 1
+  mov rdi, 1
+  mov rsi, div_by_zero_msg
+  mov rdx, div_by_zero_len
+  syscall
+  jmp ask_again
 
 unsp_op:
   mov rax, 1
@@ -345,7 +365,6 @@ unsp_op:
   mov rsi, unsp_op_msg
   mov rdx, unsp_op_len
   syscall
-
   jmp ask_again
 
 print_result:
