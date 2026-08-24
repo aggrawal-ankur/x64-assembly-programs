@@ -17,7 +17,7 @@ More than 6? Put the remaining args on stack.
 
 The callee function (the fn being called) must reserve the original value in these registers before using them and restore their state before exit.
 
-They include: rbx rbp r12 r13 r14 r15
+They include: rbx, rbp, r12, r13, r14, r15
 
 ### Caller Saved Registers
 
@@ -25,7 +25,7 @@ The caller function must preserve the original value in these registers as a cal
 
 As the callee is not liable to manage their state, they are excellent scratchpads.
 
-They include: rax rcx rdx rsi rdi r8 r9 r10 r11
+They include: rax, rcx, rdx, rsi, rdi, r8, r9, r10, r11
 
 # Register Hygiene
 
