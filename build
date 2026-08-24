@@ -1,4 +1,5 @@
 nasm -felf64 main.asm
 ld main.o -o mainelf
 ./mainelf
+echo "Exist status: $?"
 rm ./mainelf ./main.o
