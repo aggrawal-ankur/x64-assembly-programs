@@ -442,6 +442,9 @@ ask_again:
   jz  print_menu
 
 exit:
+  pop r14
+  pop r13
+  pop r12
   mov rax, 60
   xor rdi, rdi
   syscall
