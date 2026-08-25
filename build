@@ -1,5 +1,36 @@
-nasm -felf64 main.asm
-ld main.o -o mainelf
-./mainelf
-echo "Exist status: $?"
-rm ./mainelf ./main.o
+#!/bin/bash
+
+# 1. Check if a file argument was provided
+if [ -z "$1" ]; then
+  echo "Error: No assembly file specified."
+  echo "Usage: $0 <filename.asm>"
+  exit 1
+fi
+
+# 2. Check if the specified file exists
+if [ ! -f "$1" ]; then
+  echo "Error: File '$1' not found."
+  exit 1
+fi
+
+# 3. Extract the base name (e.g., "main" from "main.asm")
+BASE_NAME=$(basename "$1" .asm)
+
+# 4. Compile and link with error checking
+echo "Assembling $1...."
+nasm -felf64 "$1" -o "${BASE_NAME}.o" || exit 1
+
+echo "Linking ${BASE_NAME}.o...."
+ld "${BASE_NAME}.o" -o "${BASE_NAME}elf" || exit 1
+
+# 5. Run the executable
+echo "Running ./${BASE_NAME}elf...."
+"./${BASE_NAME}elf"
+
+# 6. Capture and print the exit status
+EXIT_STATUS=$?
+echo "Exit status: ${EXIT_STATUS}"
+
+# 7. Clean up the generated binaries
+echo "Cleaning up build files...."
+rm "./${BASE_NAME}elf" "./${BASE_NAME}.o"
